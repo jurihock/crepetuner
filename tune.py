@@ -28,9 +28,9 @@ def semitone(frequency, cp=CP, c0=C0):
     return round(12 * np.log2(frequency / (cp * c0)))
 
 
-def dbfs(value):
+def dbfs(value, bias=1e-7):
 
-    return 20 * np.log10(value + 1e-7)
+    return 20 * np.log10(value + bias)
 
 
 def a_weighting(frequency):
