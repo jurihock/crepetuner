@@ -126,6 +126,7 @@ def start(device, cp, roi, model, pause):
         plot.draw()
         plot.pause(pause * 1e-3)
 
+    stream.stop_stream()
     stream.close()
     audio.terminate()
 
