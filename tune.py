@@ -1,3 +1,4 @@
+import click
 import matplotlib.pyplot as plot
 import numpy as np
 import pyaudio
@@ -9,7 +10,7 @@ import torchcrepe
 CP = 440
 C0 = 2 ** (-(9 + 4*12) / 12)
 
-run = True
+run = False
 
 
 def scale():
@@ -27,25 +28,28 @@ def semitone(frequency, cp=CP, c0=C0):
     return round(12 * np.log2(frequency / (cp * c0)))
 
 
-def a_weighting(f):
+def dbfs(value):
 
-    a = f**4 * 12194**2
-    b = f**2 + 20.6**2
-    c = f**2 + 107.7**2
-    d = f**2 + 737.9**2
-    e = f**2 + 12194**2
-
-    w = a / (b * np.sqrt(c * d) * e)
-
-    return w
+    return 20 * np.log10(value + 1e-7)
 
 
-def a_weighting_db(f):
+def a_weighting(frequency):
 
-    w = a_weighting(f) + 1e-7
-    w = 20 * np.log10(w) + 2
+    f4 = frequency**4
+    f2 = frequency**2
 
-    return w
+    a = f4 * 12194**2
+    b = f2 + 20.6**2
+    c = f2 + 107.7**2
+    d = f2 + 737.9**2
+    e = f2 + 12194**2
+
+    return a / (b * np.sqrt(c * d) * e)
+
+
+def a_weighting_db(frequency):
+
+    return dbfs(a_weighting(frequency)) + 2
 
 
 def stop(*args, **kwargs):
@@ -54,13 +58,16 @@ def stop(*args, **kwargs):
     run = False
 
 
-def start():
+def start(device, cp, roi, model, pause):
+
+    global run
+    run = True
 
     sr = torchcrepe.SAMPLE_RATE
     ws = torchcrepe.WINDOW_SIZE
 
-    args = dict(model='full', sample_rate=sr)
-    roi = dict(fmin=50, fmax=1000)
+    args = dict(model=model, sample_rate=sr)
+    roi = dict(fmin=min(roi), fmax=max(roi))
     hop = dict(hop_length=int(10e-3 * sr))
 
     w = np.hanning(ws)
@@ -72,7 +79,7 @@ def start():
 
     stream = audio.open(
         input=True,
-        input_device_index=None,
+        input_device_index=device,
         rate=sr,
         channels=1,
         format=pyaudio.paFloat32)
@@ -91,10 +98,10 @@ def start():
         z = np.fft.rfft(w * x, norm='forward')
         z = np.abs(z)
 
-        zdb = 20 * np.log10(z + 1e-7)
-        zpeak = 20 * np.log10(np.max(z * a) + 1e-7)
+        zdb = dbfs(z)
+        zpeak = dbfs(np.max(z * a))
 
-        n = note(semitone(y)).ljust(2)
+        n = note(semitone(y, cp)).ljust(2)
 
         plot.clf()
 
@@ -110,19 +117,79 @@ def start():
         plot.title(n)
         plot.legend()
 
+        plot.xlabel('Hz')
+        plot.ylabel('dB')
+
         plot.xscale('log')
         plot.ylim(-120, 0)
 
         plot.draw()
-        plot.pause(100e-3)
+        plot.pause(pause * 1e-3)
 
     stream.close()
     audio.terminate()
 
 
-if __name__ == '__main__':
+def probe():
+
+    audio = pyaudio.PyAudio()
+    devices = audio.get_device_count()
+
+    for i in range(devices):
+
+        device = audio.get_device_info_by_index(i)
+
+        print(device.get('name'))
+
+
+def find(source):
+
+    if not source:
+        return None
+
+    name = source.lower()
+
+    audio = pyaudio.PyAudio()
+    devices = audio.get_device_count()
+
+    for i in range(devices):
+
+        device = audio.get_device_info_by_index(i)
+
+        if name in device.get('name').lower():
+            return i
+
+    return None
+
+
+@click.command('crepetuner', help='CREPE tuner, not turner', context_settings=dict(max_content_width=100, help_option_names=['-h', '--help']))
+@click.argument('source', type=str, required=False)
+@click.option('-a', '--a4', default=440, type=int, show_default=True, help='Concert pitch in hertz.')
+@click.option('-f', '--freqs', default=(50, 1000), type=(int, int), show_default=True, help='Frequency range in hertz.')
+@click.option('-m', '--model', default='full', type=str, show_default=True, help='Model name tiny or full.')
+@click.option('-p', '--pause', default=1, type=int, show_default=True, help='Delay in milliseconds.')
+@click.option('-l', '--list', is_flag=True, default=False, help='List available audio sources.')
+def main(source, a4, freqs, model, pause, list):
+
+    if list:
+
+        probe()
+        exit()
+
+    device = find(source)
 
     signal.signal(signal.SIGINT, stop)
-    plot.figure(f'A4 = {CP} Hz').canvas.mpl_connect('close_event', stop)
 
-    start()
+    figure = plot.figure(f'A4 = {a4} Hz')
+    figure.canvas.mpl_connect('close_event', stop)
+
+    start(device=device,
+          cp=a4,
+          roi=freqs,
+          model=model,
+          pause=pause)
+
+
+if __name__ == '__main__':
+
+    main()
