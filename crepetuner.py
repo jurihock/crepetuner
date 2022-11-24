@@ -1,4 +1,5 @@
 import click
+import matplotlib
 import matplotlib.pyplot as plot
 import numpy as np
 import pyaudio
@@ -6,6 +7,10 @@ import signal
 import torch
 import torchcrepe
 
+
+matplotlib.rcParams['axes.titlesize'] = 'xx-large'
+matplotlib.rcParams['axes.titleweight'] = 'bold'
+matplotlib.rcParams['axes.titlepad'] *= 3
 
 CP = 440
 C0 = 2 ** (-(9 + 4*12) / 12)
@@ -58,7 +63,7 @@ def stop(*args, **kwargs):
     run = False
 
 
-def start(device, cp, roi, model, pause):
+def start(device, cp, roi, model, pause, style):
 
     global run
     run = True
@@ -105,14 +110,14 @@ def start(device, cp, roi, model, pause):
 
         plot.clf()
 
-        plot.axvline(x=roi['fmin'], color='red', linestyle='dashed', label='f-range')
-        plot.axvline(x=roi['fmax'], color='red', linestyle='dashed')
+        plot.axvline(x=roi['fmin'], color='tab:red', linestyle='dashed', label='f-range')
+        plot.axvline(x=roi['fmax'], color='tab:red', linestyle='dashed')
 
-        plot.plot(f, zdb + adb, color='blue', linestyle='dashed', label='a-weighting')
-        plot.plot(f, zdb, color='black', label='spectrum')
+        plot.plot(f, zdb + adb, color='tab:blue', linestyle='dashed', label='a-weighting')
+        plot.plot(f, zdb, color=['black', 'white'][style], label='spectrum')
 
-        plot.axhline(y=zpeak, color='blue', label='loudness')
-        plot.axvline(x=y, color='red', label='estimate')
+        plot.axhline(y=zpeak, color='tab:blue', label='loudness')
+        plot.axvline(x=y, color='tab:red', label='estimate')
 
         plot.title(n)
         plot.legend()
@@ -169,15 +174,20 @@ def find(source):
 @click.option('-f', '--freqs', default=(50, 1000), type=(int, int), show_default=True, help='Frequency range in hertz.')
 @click.option('-m', '--model', default='full', type=str, show_default=True, help='Model name tiny or full.')
 @click.option('-p', '--pause', default=1, type=int, show_default=True, help='Delay in milliseconds.')
+@click.option('-s', '--style', default='black', type=str, show_default=True, help='Style black or white.')
 @click.option('-l', '--list', is_flag=True, default=False, help='List available audio sources.')
-def main(source, a4, freqs, model, pause, list):
+def main(source, a4, freqs, model, pause, style, list):
 
     if list:
-
         probe()
         exit()
 
     device = find(source)
+
+    style = ['white', 'black'].index(style)
+
+    if style:
+        plot.style.use('dark_background')
 
     signal.signal(signal.SIGINT, stop)
 
@@ -188,7 +198,8 @@ def main(source, a4, freqs, model, pause, list):
           cp=a4,
           roi=freqs,
           model=model,
-          pause=pause)
+          pause=pause,
+          style=style)
 
 
 if __name__ == '__main__':
